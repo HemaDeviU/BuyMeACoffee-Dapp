@@ -8,33 +8,43 @@ contract BuyMeACoffee {
     //storage variables
 
     using PriceConverter for uint256;
-    address public immutable i_owner;
+    address private immutable i_owner;
     uint256 public i_MINIMUM_USD = 5e18;
-    address[] public funders;
+    address[] private s_funders;
 
-    mapping(address => uint256) public addressToAmountFunded;
+    AggregatorV3Interface private s_priceFeed;
 
-    error NotOwner();
+    mapping(address => uint256) private s_addressToAmountFunded;
 
-    constructor() {
+    error BuyMeACoffee__NotOwner();
+
+    constructor(address priceFeed) {
         i_owner = msg.sender;
+        s_priceFeed = AggregatorV3Interface(priceFeed);
+    }
+
+    modifier OnlyOwner() {
+        require(msg.sender == i_owner);
+        _;
     }
 
     //functions
     function fund() public payable {
         require(
-            msg.value.getConversionRate() >= i_MINIMUM_USD,
+            msg.value.getConversionRate(s_priceFeed) >= i_MINIMUM_USD,
             "can you please send atleast 10$ worth"
         );
-        funders.push(msg.sender);
+        s_addressToAmountFunded[msg.sender] += msg.value;
+        s_funders.push(msg.sender);
     }
 
-    function withdraw() public {
-        for (uint i = 0; i < funders.length; i++) {
+    function withdraw() public OnlyOwner {
+        address[] memory funders = s_funders;
+        for (uint256 i = 0; i < s_funders.length; i++) {
             address funder = funders[i];
-            addressToAmountFunded[funder] = 0;
+            s_addressToAmountFunded[funder] = 0;
         }
-        funders = new address[](0);
+        s_funders = new address[](0);
         (bool success, ) = payable(msg.sender).call{
             value: address(this).balance
         }("");
@@ -49,8 +59,25 @@ contract BuyMeACoffee {
         fund();
     }
 
-    modifier OnlyOwner() {
-        require(msg.sender != i_owner);
-        _;
+    function getVersion() public view returns (uint256) {
+        return s_priceFeed.version();
+    }
+
+    function getAddressToAmountFunded(
+        address fundingAddress
+    ) external view returns (uint256) {
+        return s_addressToAmountFunded[fundingAddress];
+    }
+
+    function getFunder(uint256 index) external view returns (address) {
+        return s_funders[index];
+    }
+
+    function getOwner() external view returns (address) {
+        return i_owner;
+    }
+
+    function getPriceFeed() external view returns (AggregatorV3Interface) {
+        return s_priceFeed;
     }
 }
